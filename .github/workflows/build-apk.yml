@@ -37,7 +37,7 @@ jobs:
       - name: Extraire le projet
         shell: bash
         run: |
-          unzip -q BODYGRYZZ_ANDROID_SOURCE_ALPHA_V2.zip -d source
+          unzip -q BODYGRYZZ_ANDROID_SOURCE_ALPHA_V1.zip -d source
 
           PROJECT_DIR="$(dirname "$(find source -name settings.gradle.kts -print -quit)")"
 
