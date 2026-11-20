@@ -11,10 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Recuperer le projet
+      - name: Recuperer le depot
         uses: actions/checkout@v4
 
-      - name: Installer Java
+      - name: Installer Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,24 +23,38 @@ jobs:
       - name: Installer Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.11.1'
 
       - name: Installer Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Installer Android 35
+      - name: Installer les composants Android
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extraire BODYGRYZZ
+      - name: Extraire le projet Android
+        shell: bash
         run: |
           unzip -q BODYGRYZZ_ANDROID_SOURCE_ALPHA_V2.zip -d source
-          echo "PROJECT_DIR=source/BODYGRYZZ_ANDROID" >> "$GITHUB_ENV"
+          PROJECT_DIR="$(dirname "$(find source -name settings.gradle.kts -print -quit)")"
+          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERREUR: fichiers du projet Android introuvables dans le ZIP."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projet trouve dans: $PROJECT_DIR"
 
-      - name: Compiler APK
+      - name: Corriger la version Android
+        shell: bash
+        run: |
+          sed -i 's/version "8\.7\.3"/version "8.9.1"/' "$PROJECT_DIR/build.gradle.kts"
+          grep 'com.android.application' "$PROJECT_DIR/build.gradle.kts"
+
+      - name: Compiler BODYGRYZZ
         run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
-      - name: Recuperer APK
+      - name: Publier le fichier APK
         uses: actions/upload-artifact@v4
         with:
           name: BODYGRYZZ-APK
-          path: source/BODYGRYZZ_ANDROID/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
