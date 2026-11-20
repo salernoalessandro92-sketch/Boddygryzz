@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Recuperer le depot
         uses: actions/checkout@v4
@@ -28,7 +29,7 @@ jobs:
       - name: Installer Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Installer les composants Android
+      - name: Installer Android 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extraire le projet
@@ -42,36 +43,43 @@ jobs:
           fi
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Configurer KSP
+      - name: Reconstruire la configuration Gradle
         shell: bash
         run: |
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          p = Path(os.environ["PROJECT_DIR"]) / "settings.gradle.kts"
-          s = p.read_text()
-          s = s.replace(
-              "pluginManagement {",
-              """pluginManagement {
+          cat > "$PROJECT_DIR/settings.gradle.kts" <<'EOF'
+          pluginManagement {
               resolutionStrategy {
                   eachPlugin {
                       if (requested.id.id == "com.google.devtools.ksp") {
                           useModule("com.google.devtools.ksp:symbol-processing-gradle-plugin:${requested.version}")
                       }
                   }
-              }"""
-          )
-          p.write_text(s)
-          PY
+              }
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-      - name: Mettre a jour Android Gradle Plugin
-        run: |
-          sed -i 's/version "8.7.3"/version "8.9.1"/' "$PROJECT_DIR/build.gradle.kts"
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "BODYGRYZZ"
+          include(":app")
+          EOF
+
+          sed -i 's/version "8\.7\.3"/version "8.9.1"/' "$PROJECT_DIR/build.gradle.kts"
 
       - name: Compiler BODYGRYZZ
         run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
-      - name: Publier APK
+      - name: Publier le fichier APK
         uses: actions/upload-artifact@v4
         with:
           name: BODYGRYZZ-APK
