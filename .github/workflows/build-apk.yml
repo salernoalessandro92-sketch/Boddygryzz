@@ -15,7 +15,7 @@ jobs:
 
       - name: Extraire le projet Android
         run: |
-          unzip -o BODYGRYZZ_ANDROID_SOURCE_ALPHA.zip -d BODYGRYZZ_ANDROID
+          unzip -o BODYGRYZZ_ANDROID_SOURCE_ALPHA_V2.zip -d BODYGRYZZ_ANDROID
 
       - name: Installer Java 17
         uses: actions/setup-java@v4
