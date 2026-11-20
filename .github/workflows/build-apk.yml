@@ -43,7 +43,7 @@ jobs:
           fi
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Configurer Gradle
+      - name: Configurer Gradle et corriger Health Connect
         shell: bash
         run: |
           cat > "$PROJECT_DIR/settings.gradle.kts" <<'EOF'
@@ -79,17 +79,21 @@ jobs:
           python3 - <<'PY'
           import os, re
           from pathlib import Path
-          p = Path(os.environ["PROJECT_DIR"]) / "app" / "build.gradle.kts"
-          s = p.read_text()
+
+          project = Path(os.environ["PROJECT_DIR"])
+          gradle_file = project / "app" / "build.gradle.kts"
+          s = gradle_file.read_text()
+
           s, count = re.subn(r'compileSdk\s*=\s*35\b', 'compileSdk = 36', s)
           if count == 0:
               s, count = re.subn(r'compileSdk\s*\(\s*35\s*\)', 'compileSdk(36)', s)
           if count == 0 and not re.search(r'compileSdk\s*=\s*36\b', s):
               raise SystemExit("compileSdk introuvable")
-          p.write_text(s)
-          PY
 
-          cat >> "$PROJECT_DIR/app/build.gradle.kts" <<'EOF'
+          if "androidx.health.connect:connect-client" not in s:
+              s += '\n\ndependencies {\n    implementation("androidx.health.connect:connect-client:1.1.0")\n}\n'
+
+          s += '''
 
           // Compatibilite Java et Kotlin : JVM 17
           android {
@@ -102,7 +106,27 @@ jobs:
           kotlin {
               jvmToolchain(17)
           }
-          EOF
+          '''
+          gradle_file.write_text(s)
+
+          matches = list(project.glob("app/src/main/java/**/MainActivity.kt"))
+          if not matches:
+              raise SystemExit("MainActivity.kt introuvable")
+
+          for main_file in matches:
+              code = main_file.read_text()
+              import_line = "import androidx.health.connect.client.PermissionController"
+
+              if import_line not in code:
+                  package_match = re.search(r'^package\s+[^\n]+', code, re.MULTILINE)
+                  if not package_match:
+                      raise SystemExit("Declaration package introuvable dans MainActivity.kt")
+                  pos = package_match.end()
+                  code = code[:pos] + "\n\n" + import_line + code[pos:]
+
+              main_file.write_text(code)
+              print("Import Health Connect ajoute :", main_file)
+          PY
 
       - name: Compiler BODYGRYZZ
         run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
