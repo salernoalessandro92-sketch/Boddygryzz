@@ -29,8 +29,8 @@ jobs:
       - name: Installer Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Installer Android 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Installer Android API 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Extraire le projet
         shell: bash
@@ -43,7 +43,7 @@ jobs:
           fi
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Reconstruire la configuration Gradle
+      - name: Configurer Gradle et Android 36
         shell: bash
         run: |
           cat > "$PROJECT_DIR/settings.gradle.kts" <<'EOF'
@@ -74,7 +74,21 @@ jobs:
           include(":app")
           EOF
 
-          sed -i 's/version "8\.7\.3"/version "8.9.1"/' "$PROJECT_DIR/build.gradle.kts"
+          sed -i 's/version "8\.7\.3"/version "8.10.1"/; s/version "8\.9\.1"/version "8.10.1"/' "$PROJECT_DIR/build.gradle.kts"
+
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          p = Path(os.environ["PROJECT_DIR"]) / "app" / "build.gradle.kts"
+          s = p.read_text()
+          s, count = re.subn(r'compileSdk\s*=\s*35\b', 'compileSdk = 36', s)
+          if count == 0:
+              s, count = re.subn(r'compileSdk\s*\(\s*35\s*\)', 'compileSdk(36)', s)
+          if count == 0:
+              raise SystemExit("Impossible de trouver compileSdk 35 dans app/build.gradle.kts")
+          p.write_text(s)
+          print("compileSdk passe a 36")
+          PY
 
       - name: Compiler BODYGRYZZ
         run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
