@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Recuperer le depot
@@ -21,10 +22,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Installer Gradle
+      - name: Installer Gradle sans cache
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+          cache-disabled: true
 
       - name: Installer Android SDK
         uses: android-actions/setup-android@v4
@@ -79,7 +81,7 @@ jobs:
 
           sed -i 's/version "8\.7\.3"/version "8.10.1"/; s/version "8\.9\.1"/version "8.10.1"/' "$PROJECT_DIR/build.gradle.kts"
 
-      - name: Corriger les dependances et le code Kotlin
+      - name: Corriger les dependances Android
         shell: bash
         run: |
           python3 - <<'PY'
@@ -91,7 +93,6 @@ jobs:
           gradle_file = project / "app" / "build.gradle.kts"
           code = gradle_file.read_text()
 
-          # Android SDK 36
           code, count = re.subn(
               r'compileSdk\s*=\s*35\b',
               'compileSdk = 36',
@@ -108,10 +109,27 @@ jobs:
           if count == 0 and not re.search(r'compileSdk\s*=\s*36\b', code):
               raise SystemExit("ERREUR : compileSdk introuvable")
 
-          # Java 17 et Kotlin 17
+          # Remplacer les anciennes declarations Health Connect
+          code = re.sub(
+              r'implementation\s*\(\s*["\']androidx\.health\.connect:connect-client:[^"\']+["\']\s*\)',
+              '',
+              code
+          )
+
           code += """
 
-          // BODYGRYZZ - Compatibilite JVM 17
+          // BODYGRYZZ Health Connect
+          dependencies {
+              implementation("androidx.health.connect:connect-client:1.1.0")
+          }
+
+          configurations.configureEach {
+              resolutionStrategy.force(
+                  "androidx.health.connect:connect-client:1.1.0"
+              )
+          }
+
+          // Java et Kotlin JVM 17
           android {
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -122,58 +140,29 @@ jobs:
           kotlin {
               jvmToolchain(17)
           }
-
-          // Forcer Health Connect 1.1.0
-          configurations.configureEach {
-              resolutionStrategy.force(
-                  "androidx.health.connect:connect-client:1.1.0"
-              )
-          }
-
-          dependencies {
-              implementation("androidx.health.connect:connect-client:1.1.0")
-          }
           """
 
           gradle_file.write_text(code)
+          print("Configuration Android corrigee.")
 
-          # Corriger l'import dans MainActivity.kt
-          matches = list(
-              project.glob("app/src/main/java/**/MainActivity.kt")
-          )
+          files = list(project.glob("app/src/main/java/**/MainActivity.kt"))
 
-          if not matches:
+          if not files:
               raise SystemExit("ERREUR : MainActivity.kt introuvable")
 
-          for main_file in matches:
-              source = main_file.read_text()
+          for file in files:
+              source = file.read_text()
+              imp = "import androidx.health.connect.client.PermissionController"
 
-              import_line = (
-                  "import androidx.health.connect.client.PermissionController"
-              )
+              if imp not in source:
+                  match = re.search(r'^package\s+[^\n]+', source, re.MULTILINE)
+                  if not match:
+                      raise SystemExit("Package Kotlin introuvable")
+                  pos = match.end()
+                  source = source[:pos] + "\n\n" + imp + source[pos:]
 
-              if import_line not in source:
-                  package_match = re.search(
-                      r'^package\s+[^\n]+',
-                      source,
-                      re.MULTILINE
-                  )
-
-                  if not package_match:
-                      raise SystemExit("ERREUR : package Kotlin introuvable")
-
-                  position = package_match.end()
-                  source = (
-                      source[:position]
-                      + "\n\n"
-                      + import_line
-                      + source[position:]
-                  )
-
-              main_file.write_text(source)
-              print("Import verifie :", main_file)
-
-          print("Configuration BODYGRYZZ terminee.")
+              file.write_text(source)
+              print("Import verifie :", file)
           PY
 
       - name: Verifier Health Connect
