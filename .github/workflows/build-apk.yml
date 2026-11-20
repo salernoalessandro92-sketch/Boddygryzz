@@ -1,23 +1,20 @@
-name: BODYGRYZZ Android APK
+
+name: BODYGRYZZ APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Recuperer le depot
+      - name: Recuperer le projet
         uses: actions/checkout@v4
 
-      - name: Extraire le projet Android
-        run: |
-          unzip -o BODYGRYZZ_ANDROID_SOURCE_ALPHA_V2.zip -d BODYGRYZZ_ANDROID
-
-      - name: Installer Java 17
+      - name: Installer Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -31,15 +28,19 @@ jobs:
       - name: Installer Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Installer les composants Android
+      - name: Installer Android 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Compiler BODYGRYZZ
-        working-directory: BODYGRYZZ_ANDROID
-        run: gradle --no-daemon assembleDebug
+      - name: Extraire BODYGRYZZ
+        run: |
+          unzip -q BODYGRYZZ_ANDROID_SOURCE_ALPHA_V2.zip -d source
+          echo "PROJECT_DIR=source/BODYGRYZZ_ANDROID" >> "$GITHUB_ENV"
 
-      - name: Recuperer le fichier APK
+      - name: Compiler APK
+        run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
+
+      - name: Recuperer APK
         uses: actions/upload-artifact@v4
         with:
-          name: BODYGRYZZ-debug-APK
-          path: BODYGRYZZ_ANDROID/app/build/outputs/apk/debug/app-debug.apk
+          name: BODYGRYZZ-APK
+          path: source/BODYGRYZZ_ANDROID/app/build/outputs/apk/debug/app-debug.apk
