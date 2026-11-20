@@ -43,7 +43,7 @@ jobs:
           fi
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Configurer Gradle et Android 36
+      - name: Configurer Gradle
         shell: bash
         run: |
           cat > "$PROJECT_DIR/settings.gradle.kts" <<'EOF'
@@ -84,11 +84,25 @@ jobs:
           s, count = re.subn(r'compileSdk\s*=\s*35\b', 'compileSdk = 36', s)
           if count == 0:
               s, count = re.subn(r'compileSdk\s*\(\s*35\s*\)', 'compileSdk(36)', s)
-          if count == 0:
-              raise SystemExit("Impossible de trouver compileSdk 35 dans app/build.gradle.kts")
+          if count == 0 and not re.search(r'compileSdk\s*=\s*36\b', s):
+              raise SystemExit("compileSdk introuvable")
           p.write_text(s)
-          print("compileSdk passe a 36")
           PY
+
+          cat >> "$PROJECT_DIR/app/build.gradle.kts" <<'EOF'
+
+          // Compatibilite Java et Kotlin : JVM 17
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          kotlin {
+              jvmToolchain(17)
+          }
+          EOF
 
       - name: Compiler BODYGRYZZ
         run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
