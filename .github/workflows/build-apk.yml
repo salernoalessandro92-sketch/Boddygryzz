@@ -36,14 +36,17 @@ jobs:
         shell: bash
         run: |
           unzip -q BODYGRYZZ_ANDROID_SOURCE_ALPHA_V2.zip -d source
+
           PROJECT_DIR="$(dirname "$(find source -name settings.gradle.kts -print -quit)")"
+
           if [ -z "$PROJECT_DIR" ]; then
             echo "Projet Android introuvable"
             exit 1
           fi
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Configurer Gradle et corriger Health Connect
+      - name: Configurer Gradle
         shell: bash
         run: |
           cat > "$PROJECT_DIR/settings.gradle.kts" <<'EOF'
@@ -76,26 +79,39 @@ jobs:
 
           sed -i 's/version "8\.7\.3"/version "8.10.1"/; s/version "8\.9\.1"/version "8.10.1"/' "$PROJECT_DIR/build.gradle.kts"
 
+      - name: Corriger les dependances et le code Kotlin
+        shell: bash
+        run: |
           python3 - <<'PY'
-          import os, re
+          import os
+          import re
           from pathlib import Path
 
           project = Path(os.environ["PROJECT_DIR"])
           gradle_file = project / "app" / "build.gradle.kts"
-          s = gradle_file.read_text()
+          code = gradle_file.read_text()
 
-          s, count = re.subn(r'compileSdk\s*=\s*35\b', 'compileSdk = 36', s)
+          # Android SDK 36
+          code, count = re.subn(
+              r'compileSdk\s*=\s*35\b',
+              'compileSdk = 36',
+              code
+          )
+
           if count == 0:
-              s, count = re.subn(r'compileSdk\s*\(\s*35\s*\)', 'compileSdk(36)', s)
-          if count == 0 and not re.search(r'compileSdk\s*=\s*36\b', s):
-              raise SystemExit("compileSdk introuvable")
+              code, count = re.subn(
+                  r'compileSdk\s*\(\s*35\s*\)',
+                  'compileSdk(36)',
+                  code
+              )
 
-          if "androidx.health.connect:connect-client" not in s:
-              s += '\n\ndependencies {\n    implementation("androidx.health.connect:connect-client:1.1.0")\n}\n'
+          if count == 0 and not re.search(r'compileSdk\s*=\s*36\b', code):
+              raise SystemExit("ERREUR : compileSdk introuvable")
 
-          s += '''
+          # Java 17 et Kotlin 17
+          code += """
 
-          // Compatibilite Java et Kotlin : JVM 17
+          // BODYGRYZZ - Compatibilite JVM 17
           android {
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -106,30 +122,67 @@ jobs:
           kotlin {
               jvmToolchain(17)
           }
-          '''
-          gradle_file.write_text(s)
 
-          matches = list(project.glob("app/src/main/java/**/MainActivity.kt"))
+          // Forcer Health Connect 1.1.0
+          configurations.configureEach {
+              resolutionStrategy.force(
+                  "androidx.health.connect:connect-client:1.1.0"
+              )
+          }
+
+          dependencies {
+              implementation("androidx.health.connect:connect-client:1.1.0")
+          }
+          """
+
+          gradle_file.write_text(code)
+
+          # Corriger l'import dans MainActivity.kt
+          matches = list(
+              project.glob("app/src/main/java/**/MainActivity.kt")
+          )
+
           if not matches:
-              raise SystemExit("MainActivity.kt introuvable")
+              raise SystemExit("ERREUR : MainActivity.kt introuvable")
 
           for main_file in matches:
-              code = main_file.read_text()
-              import_line = "import androidx.health.connect.client.PermissionController"
+              source = main_file.read_text()
 
-              if import_line not in code:
-                  package_match = re.search(r'^package\s+[^\n]+', code, re.MULTILINE)
+              import_line = (
+                  "import androidx.health.connect.client.PermissionController"
+              )
+
+              if import_line not in source:
+                  package_match = re.search(
+                      r'^package\s+[^\n]+',
+                      source,
+                      re.MULTILINE
+                  )
+
                   if not package_match:
-                      raise SystemExit("Declaration package introuvable dans MainActivity.kt")
-                  pos = package_match.end()
-                  code = code[:pos] + "\n\n" + import_line + code[pos:]
+                      raise SystemExit("ERREUR : package Kotlin introuvable")
 
-              main_file.write_text(code)
-              print("Import Health Connect ajoute :", main_file)
+                  position = package_match.end()
+                  source = (
+                      source[:position]
+                      + "\n\n"
+                      + import_line
+                      + source[position:]
+                  )
+
+              main_file.write_text(source)
+              print("Import verifie :", main_file)
+
+          print("Configuration BODYGRYZZ terminee.")
           PY
 
+      - name: Verifier Health Connect
+        run: |
+          gradle --no-daemon -p "$PROJECT_DIR" :app:dependencyInsight --dependency connect-client --configuration debugCompileClasspath
+
       - name: Compiler BODYGRYZZ
-        run: gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
+        run: |
+          gradle --no-daemon -p "$PROJECT_DIR" clean assembleDebug
 
       - name: Publier le fichier APK
         uses: actions/upload-artifact@v4
